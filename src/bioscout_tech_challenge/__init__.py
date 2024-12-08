@@ -17,6 +17,7 @@ from .utils.weather import (
     # get_timezone_from_utc_offset,
     get_timezone_from_coordinates,
     expand_weather_dataframe,
+    flatten_weather_data,
 )
 #fix this later
 __version__ = importlib.metadata.version(__package__)
@@ -38,4 +39,5 @@ __all__ = [
     # 'get_timezone_from_utc_offset',
     'get_timezone_from_coordinates',
     'expand_weather_dataframe',
+    'flatten_weather_data',
 ]

@@ -19,6 +19,7 @@ from .weather import (
     # get_timezone_from_utc_offset,
     get_timezone_from_coordinates,
     expand_weather_dataframe,
+    flatten_weather_data,
 )
 
 
@@ -34,4 +35,5 @@ __all__ = [
     # 'get_timezone_from_utc_offset',
     'get_timezone_from_coordinates',
     'expand_weather_dataframe',
+    'flatten_weather_data',
 ] 

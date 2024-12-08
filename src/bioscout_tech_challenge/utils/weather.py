@@ -207,3 +207,93 @@ def get_timezone_from_coordinates(lat: float, lon: float) -> str:
         raise ValueError(f"Could not determine timezone for coordinates: {lat}, {lon}")
             
     return timezone_str
+
+
+
+
+# Add these constants before the new function
+DEFAULT_SENSOR_TYPES = [
+    'VOCs', 'Pressure', 'Humidity', 'Temperature', 
+    'WindSpeed', 'WindDirection', 'Rainfall'
+]
+DEFAULT_META_COLUMNS = ['IotID', 'Timestamp']
+DEFAULT_COLUMN_MAPPING = {
+    'Value': 'sensor_value',
+    'Sensor': 'sensor_device',
+    'IotID': 'iotid',
+}
+
+def flatten_weather_data(
+    weather_df: pd.DataFrame,
+    sensor_types: list[str] = DEFAULT_SENSOR_TYPES,
+    meta_columns: list[str] = DEFAULT_META_COLUMNS,
+    column_mapping: dict = DEFAULT_COLUMN_MAPPING,
+    drop_extra_information: bool = True,
+) -> pd.DataFrame:
+    """
+    Flattens the extra_information JSON column in weather data into separate rows for each sensor reading.
+    
+    Args:
+        weather_df: Weather dataframe containing extra_information column
+        sensor_types: List of sensor types to extract. 
+            Defaults to common weather sensors (temperature, pressure, etc.)
+        meta_columns: List of metadata columns to include from the JSON. 
+            Defaults to ['IotID', 'Timestamp']
+        column_mapping: Dictionary to map original column names to new names.
+            Defaults to mapping Value->sensor_value, Sensor->sensor_device, IotID->iotid
+        drop_extra_information: Whether to drop the extra_information column in the output.
+            Defaults to True
+            
+    Returns:
+        Flattened dataframe with sensor readings as separate rows
+    """
+    # Validate required columns
+    required_columns = {'extra_information', 'weather_reading_id'}
+    missing_columns = required_columns - set(weather_df.columns)
+    if missing_columns:
+        raise KeyError(f"Missing required columns: {missing_columns}")
+    
+    
+    # Convert JSON strings to Python dictionaries
+    fixed = weather_df['extra_information'].apply(ast.literal_eval).tolist()
+    
+    # Process each sensor type
+    sensor_dfs = []
+    for sensor_type in sensor_types:
+        try:
+            df = pd.json_normalize(
+                fixed,
+                record_path=[sensor_type],
+                meta=meta_columns
+            )
+            df['sensor_type'] = sensor_type.lower()
+            
+            # Create repeated weather_reading_id array
+            readings_per_row = df.shape[0] // weather_df.shape[0]
+            weather_ids = np.repeat(weather_df['weather_reading_id'].values, readings_per_row)
+            df['weather_reading_id'] = weather_ids
+            sensor_dfs.append(df)
+        except KeyError:
+            print(f"Warning: {sensor_type} not found in some records")
+
+    if not sensor_dfs:
+        raise ValueError("No sensor data was successfully processed")
+
+    # Combine all sensor dataframes
+    combined_sensors = pd.concat(sensor_dfs, ignore_index=True)
+    
+    # Rename columns using provided mapping
+    combined_sensors = combined_sensors.rename(columns=column_mapping)
+    
+    # Merge with original weather dataframe
+    final_df = weather_df.merge(
+        combined_sensors,
+        on=['weather_reading_id'],
+        how='left'
+    )
+    
+    # After the final merge, optionally drop the extra_information column
+    if drop_extra_information:
+        final_df = final_df.drop(columns=['extra_information'])
+    
+    return final_df
