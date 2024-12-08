@@ -12,7 +12,14 @@ from .file_operations import (
     combine_csv_files,
     find_csv_files,
 )
-from .weather import merge_weather_data, get_na_rows
+from .weather import (
+    merge_weather_data,
+    get_na_rows,
+    expand_extra_information,
+    # get_timezone_from_utc_offset,
+    get_timezone_from_coordinates,
+    expand_weather_dataframe,
+)
 
 
 __all__ = [
@@ -23,4 +30,8 @@ __all__ = [
     'get_na_rows',
     'combine_csv_files',
     'find_csv_files',
+    'expand_extra_information',
+    # 'get_timezone_from_utc_offset',
+    'get_timezone_from_coordinates',
+    'expand_weather_dataframe',
 ] 
