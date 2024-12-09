@@ -11,6 +11,8 @@ from .file_operations import (
     identify_header,
     combine_csv_files,
     find_csv_files,
+    read_json_file,
+    parse_sensor_schema
 )
 from .weather import (
     merge_weather_data,
@@ -20,6 +22,9 @@ from .weather import (
     get_timezone_from_coordinates,
     expand_weather_dataframe,
     flatten_weather_data,
+    add_sensor_units,
+    check_timestamp_match,
+    add_timezone_from_coordinates,
 )
 
 
@@ -36,4 +41,9 @@ __all__ = [
     'get_timezone_from_coordinates',
     'expand_weather_dataframe',
     'flatten_weather_data',
+    'add_sensor_units',
+    'check_timestamp_match',
+    'read_json_file',
+    'parse_sensor_schema',
+    'add_timezone_from_coordinates'
 ] 

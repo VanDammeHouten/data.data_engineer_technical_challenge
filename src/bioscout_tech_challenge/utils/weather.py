@@ -125,7 +125,7 @@ def expand_extra_information(
                 new_row = row_dropped.copy()
                 new_row['sensor_type'] = sensor_schema[key][0]
                 new_row['sensor_device'] = reading['Sensor']
-                new_row['sensor_reading'] = reading['Value']
+                new_row['sensor_value'] = reading['Value']
                 new_row['sensor_units'] = sensor_schema[key][1]            
 
                 if 'SampleTimeLength' in reading:
@@ -221,14 +221,19 @@ DEFAULT_COLUMN_MAPPING = {
     'Value': 'sensor_value',
     'Sensor': 'sensor_device',
     'IotID': 'iotid',
+    'SampleTimeLength': 'sample_time_length',
+    'Timestamp': 'timestamp',
 }
+
+DEFAULT_COLUMNS_TO_DROP = ['extra_information', 'pressure', 'voc']
 
 def flatten_weather_data(
     weather_df: pd.DataFrame,
     sensor_types: list[str] = DEFAULT_SENSOR_TYPES,
     meta_columns: list[str] = DEFAULT_META_COLUMNS,
     column_mapping: dict = DEFAULT_COLUMN_MAPPING,
-    drop_extra_information: bool = True,
+    columns_to_drop: list[str] = DEFAULT_COLUMNS_TO_DROP,
+    sensor_units: dict = {}
 ) -> pd.DataFrame:
     """
     Flattens the extra_information JSON column in weather data into separate rows for each sensor reading.
@@ -241,8 +246,8 @@ def flatten_weather_data(
             Defaults to ['IotID', 'Timestamp']
         column_mapping: Dictionary to map original column names to new names.
             Defaults to mapping Value->sensor_value, Sensor->sensor_device, IotID->iotid
-        drop_extra_information: Whether to drop the extra_information column in the output.
-            Defaults to True
+        columns_to_drop: List of columns to drop from the output.
+            Defaults to ['extra_information', 'pressure', 'voc']
             
     Returns:
         Flattened dataframe with sensor readings as separate rows
@@ -266,7 +271,7 @@ def flatten_weather_data(
                 record_path=[sensor_type],
                 meta=meta_columns
             )
-            df['sensor_type'] = sensor_type.lower()
+            df['sensor_type'] = sensor_type.lower().rstrip('s')
             
             # Create repeated weather_reading_id array
             readings_per_row = df.shape[0] // weather_df.shape[0]
@@ -281,7 +286,6 @@ def flatten_weather_data(
 
     # Combine all sensor dataframes
     combined_sensors = pd.concat(sensor_dfs, ignore_index=True)
-    
     # Rename columns using provided mapping
     combined_sensors = combined_sensors.rename(columns=column_mapping)
     
@@ -291,9 +295,93 @@ def flatten_weather_data(
         on=['weather_reading_id'],
         how='left'
     )
-    
+    # Replace NaN values in sample_time_length with -1
+    final_df['sample_time_length'] = final_df['sample_time_length'].fillna(-1)
+    if sensor_units:
+        final_df = add_sensor_units(final_df, sensor_units)
     # After the final merge, optionally drop the extra_information column
-    if drop_extra_information:
-        final_df = final_df.drop(columns=['extra_information'])
+    final_df = final_df.drop(columns=columns_to_drop)
     
     return final_df
+
+def add_sensor_units(df: pd.DataFrame, sensor_units: dict) -> pd.DataFrame:
+    """
+    Add a sensor_units column to the DataFrame based on the sensor scheme.
+
+    Args:
+        df (pd.DataFrame): Input DataFrame containing sensor readings
+        sensor_units (dict): Dictionary mapping sensor types to their units
+                            e.g. {'temperature': '°C', 'humidity': '%'}
+
+    Returns:
+        pd.DataFrame: DataFrame with added sensor_units column
+    """
+    # Map sensor types to their units directly on original dataframe
+    df['sensor_units'] = df['sensor_type'].map(sensor_units)
+    
+    return df
+
+def add_timezone_from_coordinates(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add a timezone column to the DataFrame based on latitude and longitude coordinates.
+
+    Args:
+        df (pd.DataFrame): Input DataFrame containing latitude and longitude columns
+
+    Returns:
+        pd.DataFrame: DataFrame with added timezone column
+
+    Raises:
+        ValueError: If latitude or longitude columns are missing from the DataFrame
+    """
+    # Verify required columns exist
+    required_cols = ['latitude', 'longitude'] 
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        raise ValueError(f"Missing required columns: {missing_cols}")
+
+    # Apply timezone lookup to each row using existing get_timezone_from_coordinates function
+    df['timezone'] = df.apply(
+        lambda row: get_timezone_from_coordinates(row['latitude'], row['longitude']), 
+        axis=1
+    )
+    
+    return df
+
+def check_timestamp_match(df: pd.DataFrame,
+                         date_measured_col: str = 'date_measured',
+                         timestamp_col: str = 'timestamp') -> list[int]:
+    """
+    Check if timestamps in two columns match across a DataFrame and return indices of mismatched rows.
+
+    Args:
+        df (pd.DataFrame): DataFrame containing the timestamp columns
+        date_measured_col (str, optional): Name of the date_measured column. Defaults to 'date_measured'.
+        timestamp_col (str, optional): Name of the timestamp column to compare against. Defaults to 'timestamp'.
+
+    Returns:
+        list[int]: List of row indices where timestamps don't match between columns
+
+    Raises:
+        ValueError: If either column name is not found in the DataFrame
+    """
+    if date_measured_col not in df.columns or timestamp_col not in df.columns:
+        raise ValueError(f"One or both column names not found in DataFrame: {date_measured_col}, {timestamp_col}")
+    
+    try:
+        # Convert both columns to datetime
+        date_measured = pd.to_datetime(df[date_measured_col])
+        timestamp = pd.to_datetime(df[timestamp_col])
+        
+        # Find indices where timestamps don't match
+        mismatch_mask = date_measured != timestamp
+        mismatched_indices = df.index[mismatch_mask].tolist()
+        
+        return mismatched_indices
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"Error converting timestamps: {str(e)}")
+
+
+
+
+
