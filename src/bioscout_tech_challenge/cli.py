@@ -196,3 +196,107 @@ def flatten(opts: CommandOptions):
     
     logger.info(f"Flattened {len(files)} files and saved to {opts.output}")
 
+@APP.command
+@argument(
+    "--device_csv",
+    help_text="Path to the device csv file",
+    default=None,
+    type=Path,
+    required=True,
+)
+@argument(
+    "-o",
+    "--output",
+    help_text="Path to the output file/folder",
+    default=None,
+    type=Path,
+)
+@argument(
+    "--weather_csv",
+    help_text="Path to the weather csv file",
+    default=None,
+    type=Path,
+)
+@argument(
+    "-d",
+    "--directory",
+    help_text="Path to the directory of weatherfiles to merge",
+    default=None,
+    type=Path,
+)
+@argument(
+    "-tz",
+    "--timezone",
+    help_text="Calculate the timezone of the device from the latitude and longitude",
+    default=False,
+    action="store_true",
+)
+@argument(
+    "-m",
+    "--merge_column",
+    help_text="Column to merge on",
+    default="device_id",
+)
+def merge(opts: CommandOptions):
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG if settings.DEBUG else logging.INFO)
+    try:
+        device_df = read_csv_file(opts.device_csv)
+    except Exception as e:
+        logger.error(f"Error reading device data: {e}")
+        return
+    if opts.timezone:
+        device_df = add_timezone_from_coordinates(device_df)
+
+    if opts.directory:
+        try:
+            files = find_csv_files(
+                opts.directory, 
+                prefix=BioscoutTechChallengeSettings.PREFIX, 
+                recursive=BioscoutTechChallengeSettings.RECURSIVE
+            )
+        except Exception as e:
+            logger.error(e)
+            return
+    elif opts.weather_csv:
+        logger.info(f"Merging files from {opts.weather_csv} and {opts.device_csv}")
+        files = [opts.weather_csv]
+    else:
+        logger.error("Need to provide a weather csv file or a directory of weather csv files")
+        return
+    
+    if opts.output is not None:
+        if opts.output.suffix and len(files) > 1:
+            logger.error("Cannot merge multiple files into a single output file")
+            return
+        elif opts.output.suffix and opts.output.exists():
+            logger.warning(f"Output file {opts.output} already exists, overwriting it")
+
+        elif not opts.output.exists():
+            if opts.output.suffix and not opts.output.parent.exists():
+                logger.warning(f"Output folder {opts.output.parent} does not exist, creating it")
+                opts.output.parent.mkdir(parents=True, exist_ok=True)
+            elif not opts.output.exists() and not opts.output.suffix:
+                logger.warning(f"Output folder {opts.output} does not exist, creating it")
+                opts.output.mkdir(parents=True, exist_ok=True)
+
+
+    for file in files:
+        try:
+            weather_df = read_csv_file(file)
+        except Exception as e:
+            logger.error(f"Error reading weather data: {e}")
+            return
+
+        merged_df = merge_weather_data(weather_df,device_df,merge_column=opts.merge_column)
+
+        if opts.output is None:
+            outputfile =file.parent / (file.name.replace('.csv', '') + '_merged' + '.csv')
+        elif opts.output.is_dir():
+            outputfile = opts.output/ (file.name.replace('.csv', '') + '_merged' + '.csv')
+        else:
+            outputfile = opts.output
+        save_csv_file(merged_df, outputfile)
+        logger.info(f"Merged {file} and saved to {outputfile.name}")
+
+
