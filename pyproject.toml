@@ -2,7 +2,7 @@
 name = "bioscout-tech-challenge"
 version = "0.1.0"
 description = "Technical challenge for BioScout's 2024 Data Engineer Role"
-authors = ["Nick <nicholas@bioscout.com.au>"]
+authors = ["Zach <zach.milgate@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.scripts]

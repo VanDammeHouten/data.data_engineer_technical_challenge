@@ -32,5 +32,9 @@
         "pressure",
         "voc",
         "date_measured"
-    ]
+    ],
+    "column_types": {
+        "sensor_value": "float",
+        "sample_time_length": "int"
+    }
 } 
