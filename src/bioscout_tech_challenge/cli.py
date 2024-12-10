@@ -29,8 +29,13 @@ def hello(opts: CommandOptions):
     logger.setLevel(logging.DEBUG if settings.DEBUG else logging.INFO)
     logger.info(f"Hello {opts.name}")
 
+# Create the weather command group
+weather_group = APP.create_command_group(
+    "weather",
+    help_text="Commands for processing weather data files",
+)
 
-@APP.command
+@weather_group.command(name="flatten")
 @argument(
     "-f",
     "--file",
@@ -85,7 +90,11 @@ def hello(opts: CommandOptions):
     help_text="Separator for the csv file",
     default=BioscoutTechChallengeSettings.SEPARATOR,
 )
-def flatten(opts: CommandOptions):
+def flatten_weather(opts: CommandOptions):
+    """
+    Flatten weather data from a CSV file or directory of CSV files.
+    Extracts additional sensor data from the extra_information column and merges it with the weather data.
+    """
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.DEBUG if settings.DEBUG else logging.INFO)
     # check if the user provided a file or directory
@@ -196,33 +205,26 @@ def flatten(opts: CommandOptions):
     
     logger.info(f"Flattened {len(files)} files and saved to {opts.output}")
 
-@APP.command
+@weather_group.command(name="merge")
 @argument(
     "--device_csv",
     help_text="Path to the device csv file",
-    default=None,
     type=Path,
     required=True,
 )
 @argument(
-    "-o",
-    "--output",
-    help_text="Path to the output file/folder",
-    default=None,
+    "-f",
+    "--file",
+    help_text="Path to the weather csv file to merge",
     type=Path,
-)
-@argument(
-    "--weather_csv",
-    help_text="Path to the weather csv file",
     default=None,
-    type=Path,
 )
 @argument(
     "-d",
     "--directory",
-    help_text="Path to the directory of weatherfiles to merge",
-    default=None,
+    help_text="Path to the directory of weather files to merge",
     type=Path,
+    default=None,
 )
 @argument(
     "-tz",
@@ -232,71 +234,183 @@ def flatten(opts: CommandOptions):
     action="store_true",
 )
 @argument(
+    "-o",
+    "--output",
+    help_text="Path to save merged files. If not provided, will save alongside input files",
+    type=Path,
+    default=None,
+)
+@argument(
     "-m",
     "--merge_column",
-    help_text="Column to merge on",
+    help_text="Column to merge on (default: device_id)",
+    type=str,
     default="device_id",
 )
-def merge(opts: CommandOptions):
+def merge_command(opts: CommandOptions):
+    """
+    Merge weather data with device information from a CSV file.
+    Can merge either a single weather CSV file or an entire directory of weather files.
+    """
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.DEBUG if settings.DEBUG else logging.INFO)
+
+    # Read device data
     try:
         device_df = read_csv_file(opts.device_csv)
+        logger.info(f"Read device data from {opts.device_csv}")
     except Exception as e:
         logger.error(f"Error reading device data: {e}")
         return
     if opts.timezone:
         device_df = add_timezone_from_coordinates(device_df)
 
+    # Determine input files
     if opts.directory:
         try:
             files = find_csv_files(
                 opts.directory, 
-                prefix=BioscoutTechChallengeSettings.PREFIX, 
                 recursive=BioscoutTechChallengeSettings.RECURSIVE
             )
+            logger.info(f"Found {len(files)} files in {opts.directory}")
         except Exception as e:
-            logger.error(e)
+            logger.error(f"Error finding CSV files: {e}")
             return
-    elif opts.weather_csv:
-        logger.info(f"Merging files from {opts.weather_csv} and {opts.device_csv}")
-        files = [opts.weather_csv]
+    elif opts.file:
+        files = [Path(opts.file)]
+        logger.info(f"Using single file: {opts.file}")
     else:
-        logger.error("Need to provide a weather csv file or a directory of weather csv files")
+        logger.error("No input file or directory provided")
         return
-    
-    if opts.output is not None:
-        if opts.output.suffix and len(files) > 1:
-            logger.error("Cannot merge multiple files into a single output file")
-            return
-        elif opts.output.suffix and opts.output.exists():
-            logger.warning(f"Output file {opts.output} already exists, overwriting it")
 
-        elif not opts.output.exists():
-            if opts.output.suffix and not opts.output.parent.exists():
-                logger.warning(f"Output folder {opts.output.parent} does not exist, creating it")
-                opts.output.parent.mkdir(parents=True, exist_ok=True)
-            elif not opts.output.exists() and not opts.output.suffix:
-                logger.warning(f"Output folder {opts.output} does not exist, creating it")
-                opts.output.mkdir(parents=True, exist_ok=True)
-
-
+    # Process each file
     for file in files:
         try:
+            # Read weather data
             weather_df = read_csv_file(file)
+            logger.debug(f"Read weather data from {file}")
+
+            # Merge data
+            merged_df = merge_weather_data(
+                weather_df,
+                device_df,
+                merge_column=opts.merge_column
+            )
+            logger.debug(f"Merged data for {file}")
+
+            # Determine output path
+            if opts.output is None:
+                output_file = file.parent / (file.stem + '_merged.csv')
+            elif opts.output.is_dir():
+                output_file = opts.output / (file.stem + '_merged.csv')
+            else:
+                output_file = opts.output
+
+            # Create output directory if needed
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+
+            # Save merged data
+            save_csv_file(merged_df, output_file)
+            logger.info(f"Saved merged data to {output_file}")
+
         except Exception as e:
-            logger.error(f"Error reading weather data: {e}")
+            logger.error(f"Error processing file {file}: {e}")
+            continue
+
+@weather_group.command(name="filter")
+@argument(
+    "-f",
+    "--file",
+    help_text="Path to the weather csv file to filter",
+    default=None,
+    type=Path,
+)
+@argument(
+    "-o",
+    "--output",
+    help_text="Path to the output file",
+    default=None,
+    type=Path,
+)
+@argument(
+    "-d",
+    "--directory",
+    help_text="Path to the directory of weather files to filter",
+    default=None,
+    type=Path,
+)
+@argument(
+    "-ff",
+    "--filter_file", 
+    help_text="Path to the filter file json containing columns and values to filter on",
+    default=None,
+    type=Path,
+    required=True
+)
+@argument(
+    "-t",
+    "--tag",
+    help_text="Name of the column to add when tagging rows. If not provided, matching rows will be removed",
+    default=None,
+)
+def filter_weather(opts: CommandOptions):
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG if settings.DEBUG else logging.INFO)
+    
+    # Check inputs
+    if opts.directory:
+        logger.info(f"Filtering files in directory {opts.directory}")
+        try:
+            files = find_csv_files(opts.directory, recursive=BioscoutTechChallengeSettings.RECURSIVE)
+        except Exception as e:
+            logger.error(f"Error finding CSV files: {e}")
             return
+    elif opts.file:
+        logger.info(f"Filtering file {opts.file}")
+        files = [Path(opts.file)]
+    else:
+        logger.error("No input file or directory provided")
+        return
 
-        merged_df = merge_weather_data(weather_df,device_df,merge_column=opts.merge_column)
+    # Read filter file
+    try:
+        filter_dict = read_json_file(opts.filter_file)
+    except Exception as e:
+        logger.error(f"Error reading filter file: {e}")
+        return
 
-        if opts.output is None:
-            outputfile =file.parent / (file.name.replace('.csv', '') + '_merged' + '.csv')
-        elif opts.output.is_dir():
-            outputfile = opts.output/ (file.name.replace('.csv', '') + '_merged' + '.csv')
-        else:
-            outputfile = opts.output
-        save_csv_file(merged_df, outputfile)
-        logger.info(f"Merged {file} and saved to {outputfile.name}")
+    # Process each file
+    for file in files:
+        try:
+            data_df = read_csv_file(file)
+            
+            # Get matching rows
+            matching_rows = data_df.merge(filter_df, how='left', indicator=True)
+            matching_mask = matching_rows['_merge'] == 'both'
+            
+            # Filter the data
+            
+            if opts.tag:
+                # Tag matching rows
+                data_df[opts.tag] = matching_mask
+                filtered_df = data_df
+                logger.info(f"Tagged {matching_mask.sum()} rows in {file.name}")
+            else:
+                # Remove matching rows
+                filtered_df = data_df[~matching_mask]
+                logger.info(f"Removed {matching_mask.sum()} rows from {file.name}")
 
-
+            # Save output
+            if opts.output is None:
+                outputfile = file.parent / (file.name.replace('.csv', '') + '_filtered.csv')
+            elif opts.output.is_dir():
+                outputfile = opts.output / (file.name.replace('.csv', '') + '_filtered.csv')
+            else:
+                outputfile = opts.output
+                
+            save_csv_file(filtered_df, outputfile)
+            logger.info(f"Saved filtered data to {outputfile}")
+            
+        except Exception as e:
+            logger.error(f"Error processing file {file}: {e}")
+            continue

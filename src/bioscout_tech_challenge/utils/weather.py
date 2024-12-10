@@ -1,3 +1,21 @@
+"""
+Weather-related utility functions.
+"""
+
+__all__ = [
+    'merge_weather_data',
+    'get_na_rows',
+    'expand_extra_information',
+    'expand_weather_dataframe',
+    'get_timezone_from_coordinates',
+    'flatten_weather_data',
+    'add_sensor_units',
+    'add_timezone_from_coordinates',
+    'check_timestamp_match',
+    'filter_weather_data',
+    'apply_single_filter'
+]
+
 import pandas as pd
 import json
 import ast
@@ -111,7 +129,10 @@ def expand_extra_information(
     #     raise ValueError(f"Timezone from coordinates does not match timezone from UTC offset")
     # else:
     row_dropped['timezone'] = timezone_coord
-
+    if row_dropped['timestamp'].exists():
+        row_dropped['timestamp'] = row_dropped['timestamp'].dt.tz_localize(row_dropped['timezone'])
+    else:
+        row_dropped['timestamp'] = row_dropped['timestamp'].astype(str)
     for key in unique_columns:
         if key in json_data:
             # Convert to lowercase to match the expected column names
@@ -224,8 +245,119 @@ DEFAULT_COLUMN_MAPPING = {
     'SampleTimeLength': 'sample_time_length',
     'Timestamp': 'timestamp',
 }
-
+DEFAULT_COLUMN_TYPES = {
+    "sensor_units": "str",
+    "timezone": "str",
+    "sensor_type": "str",
+    "sensor_device": "str",
+    "sensor_value": "float",
+    "sample_time_length": "int",
+    "timestamp": "datetime",
+}
 DEFAULT_COLUMNS_TO_DROP = ['extra_information', 'pressure', 'voc']
+
+def process_sensor_data(
+    fixed_json: list,
+    sensor_type: str,
+    meta_columns: list[str],
+    weather_df: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Process data for a single sensor type from JSON data.
+    
+    Args:
+        fixed_json: List of parsed JSON dictionaries
+        sensor_type: Type of sensor to process
+        meta_columns: List of metadata columns to include
+        weather_df: Original weather dataframe for IDs
+        
+    Returns:
+        DataFrame containing processed sensor data
+    """
+    df = pd.json_normalize(
+        fixed_json,
+        record_path=[sensor_type], 
+        meta=meta_columns
+    )
+    df['sensor_type'] = sensor_type.lower().rstrip('s')
+    
+    readings_per_row = df.shape[0] // weather_df.shape[0]
+    weather_ids = np.repeat(weather_df['weather_reading_id'].values, readings_per_row)
+    df['weather_reading_id'] = weather_ids
+    
+    return df
+
+def validate_input_df(weather_df: pd.DataFrame) -> None:
+    """
+    Validate that required columns exist in input dataframe.
+    
+    Args:
+        weather_df: Weather dataframe to validate
+        
+    Raises:
+        KeyError: If required columns are missing
+    """
+    required_columns = {'extra_information', 'weather_reading_id'} 
+    missing_columns = required_columns - set(weather_df.columns)
+    if missing_columns:
+        raise KeyError(f"Missing required columns: {missing_columns}")
+def fix_json_strings(json_strings: list) -> list:
+    """
+    Fix and parse JSON strings that may have encoding issues.
+    
+    Args:
+        json_strings: List of JSON strings to fix
+        
+    Returns:
+        List of parsed JSON dictionaries
+    """
+    fixed = []
+    for json_str in json_strings:
+        if isinstance(json_str, str):
+            # Fix common encoding issues
+            json_str = json_str.replace("'", '"')
+            json_str = json_str.replace('None', 'null')
+            json_str = json_str.replace('True', 'true')
+            json_str = json_str.replace('False', 'false')
+            
+            try:
+                fixed.append(json.loads(json_str))
+            except json.JSONDecodeError:
+                # If JSON parsing fails, try literal eval as fallback
+                try:
+                    fixed.append(ast.literal_eval(json_str))
+                except:
+                    fixed.append({})
+        else:
+            fixed.append(json_str)
+    return fixed
+
+def convert_data_types(df: pd.DataFrame, column_dtypes: dict[str, str]) -> pd.DataFrame:
+    """
+    Convert DataFrame columns to specified data types.
+    
+    Args:
+        df: DataFrame to convert
+        column_dtypes: Dictionary mapping column names to their desired data types.
+            Valid dtypes include: 'int64', 'float64', 'string', 'datetime64[ns]'
+            
+    Returns:
+        DataFrame with converted data types
+    """
+    for column, dtype in column_dtypes.items():
+        if column in df.columns:
+            try:
+                if dtype in ['datetime', 'datetime64', 'datetime64[ns]']:
+                    df[column] = pd.to_datetime(df[column], errors='coerce')
+                elif dtype in ['int', 'int64']:
+                    df[column] = pd.to_numeric(df[column], errors='coerce')
+                elif dtype in ['float', 'float64']:
+                    df[column] = pd.to_numeric(df[column], errors='coerce')
+                elif dtype in ['str', 'string']:
+                    df[column] = df[column].astype('|S') 
+            except Exception as e:
+                print(f"Warning: Could not convert {column} to {dtype}: {e}")
+    return df
 
 def flatten_weather_data(
     weather_df: pd.DataFrame,
@@ -233,50 +365,26 @@ def flatten_weather_data(
     meta_columns: list[str] = DEFAULT_META_COLUMNS,
     column_mapping: dict = DEFAULT_COLUMN_MAPPING,
     columns_to_drop: list[str] = DEFAULT_COLUMNS_TO_DROP,
-    sensor_units: dict = {}
+    sensor_units: dict = {},
+    column_types: dict = DEFAULT_COLUMN_TYPES
 ) -> pd.DataFrame:
     """
     Flattens the extra_information JSON column in weather data into separate rows for each sensor reading.
-    
-    Args:
-        weather_df: Weather dataframe containing extra_information column
-        sensor_types: List of sensor types to extract. 
-            Defaults to common weather sensors (temperature, pressure, etc.)
-        meta_columns: List of metadata columns to include from the JSON. 
-            Defaults to ['IotID', 'Timestamp']
-        column_mapping: Dictionary to map original column names to new names.
-            Defaults to mapping Value->sensor_value, Sensor->sensor_device, IotID->iotid
-        columns_to_drop: List of columns to drop from the output.
-            Defaults to ['extra_information', 'pressure', 'voc']
-            
-    Returns:
-        Flattened dataframe with sensor readings as separate rows
     """
-    # Validate required columns
-    required_columns = {'extra_information', 'weather_reading_id'}
-    missing_columns = required_columns - set(weather_df.columns)
-    if missing_columns:
-        raise KeyError(f"Missing required columns: {missing_columns}")
+    try:
+        validate_input_df(weather_df)
+    except KeyError as e:
+        logger.error(f"Missing required columns: {e}")
+        return
     
-    
-    # Convert JSON strings to Python dictionaries
-    fixed = weather_df['extra_information'].apply(ast.literal_eval).tolist()
+    # Parse JSON data
+    fixed_json = weather_df['extra_information'].apply(ast.literal_eval).tolist()
     
     # Process each sensor type
     sensor_dfs = []
     for sensor_type in sensor_types:
         try:
-            df = pd.json_normalize(
-                fixed,
-                record_path=[sensor_type],
-                meta=meta_columns
-            )
-            df['sensor_type'] = sensor_type.lower().rstrip('s')
-            
-            # Create repeated weather_reading_id array
-            readings_per_row = df.shape[0] // weather_df.shape[0]
-            weather_ids = np.repeat(weather_df['weather_reading_id'].values, readings_per_row)
-            df['weather_reading_id'] = weather_ids
+            df = process_sensor_data(fixed_json, sensor_type, meta_columns, weather_df)
             sensor_dfs.append(df)
         except KeyError:
             print(f"Warning: {sensor_type} not found in some records")
@@ -284,8 +392,9 @@ def flatten_weather_data(
     if not sensor_dfs:
         raise ValueError("No sensor data was successfully processed")
 
-    # Combine all sensor dataframes
+    # Combine and process dataframes
     combined_sensors = pd.concat(sensor_dfs, ignore_index=True)
+    
     # Rename columns using provided mapping
     combined_sensors = combined_sensors.rename(columns=column_mapping)
     
@@ -295,13 +404,19 @@ def flatten_weather_data(
         on=['weather_reading_id'],
         how='left'
     )
-    # Replace NaN values in sample_time_length with -1
-    final_df['sample_time_length'] = final_df['sample_time_length'].fillna(-1)
-    if sensor_units:
-        final_df = add_sensor_units(final_df, sensor_units)
-    # After the final merge, optionally drop the extra_information column
+    
+    # Drop unnecessary columns
     final_df = final_df.drop(columns=columns_to_drop)
     
+    # Handle special cases
+    if 'sample_time_length' in final_df.columns:
+        final_df['sample_time_length'] = final_df['sample_time_length'].fillna(-1)
+    
+    if sensor_units:
+        final_df = add_sensor_units(final_df, sensor_units)
+
+    # Convert data types
+    final_df = convert_data_types(final_df, column_types)
     return final_df
 
 def add_sensor_units(df: pd.DataFrame, sensor_units: dict) -> pd.DataFrame:
@@ -318,7 +433,8 @@ def add_sensor_units(df: pd.DataFrame, sensor_units: dict) -> pd.DataFrame:
     """
     # Map sensor types to their units directly on original dataframe
     df['sensor_units'] = df['sensor_type'].map(sensor_units)
-    
+    # set to string
+    df['sensor_units'] = df['sensor_units'].astype(str)
     return df
 
 def add_timezone_from_coordinates(df: pd.DataFrame) -> pd.DataFrame:
@@ -345,7 +461,9 @@ def add_timezone_from_coordinates(df: pd.DataFrame) -> pd.DataFrame:
         lambda row: get_timezone_from_coordinates(row['latitude'], row['longitude']), 
         axis=1
     )
-    
+    # set to string
+    df['timezone'] = df['timezone'].astype(str)
+
     return df
 
 def check_timestamp_match(df: pd.DataFrame,
@@ -381,6 +499,89 @@ def check_timestamp_match(df: pd.DataFrame,
     except (TypeError, ValueError) as e:
         raise ValueError(f"Error converting timestamps: {str(e)}")
 
+def apply_single_filter(df: pd.DataFrame, filter_dict: dict) -> pd.Index:
+    """
+    Apply a single set of filter criteria and return matching indices.
+    
+    Args:
+        df (pd.DataFrame): DataFrame to filter
+        filter_dict (dict): Dictionary of filter criteria
+            
+    Returns:
+        pd.Index: Index of rows matching all criteria
+    """
+    valid_idx = pd.Series(True, index=df.index)
+    
+    for col, criteria in filter_dict.items():
+        if col not in df.columns:
+            raise ValueError(f"Column '{col}' not found in DataFrame")
+            
+        if isinstance(criteria, dict):
+            if 'min' in criteria:
+                if col == 'timestamp':
+                    # Convert both to datetime for timestamp comparisons
+                    df_dates = pd.to_datetime(df[col]).dt.date
+                    min_date = pd.to_datetime(criteria['min']).date()
+                    valid_idx &= df_dates >= min_date
+                else:
+                    valid_idx &= df[col] >= criteria['min']
+                    
+            if 'max' in criteria:
+                if col == 'timestamp':
+                    # Convert both to datetime for timestamp comparisons
+                    df_dates = pd.to_datetime(df[col]).dt.date
+                    max_date = pd.to_datetime(criteria['max']).date()
+                    valid_idx &= df_dates <= max_date
+                else:
+                    valid_idx &= df[col] <= criteria['max']
+        else:
+            valid_idx &= (df[col] == criteria)
+    return df.index[valid_idx]
+
+def filter_weather_data(df: pd.DataFrame, filter_dict: dict) -> pd.Index:
+    """
+    Get indices of rows matching any of the filter criteria sets.
+    
+    Args:
+        df (pd.DataFrame): DataFrame to filter
+        filter_dict (dict): Dictionary containing a list of filter criteria under 'filters' key
+            
+    Returns:
+        pd.Index: Index of rows matching any of the filter sets
+        
+    Example filter_dict:
+    {
+        "filters": [
+            {
+                "device_id": "255",
+                "timestamp": {
+                    "min": "2023-11-05"
+                }
+            },
+            {
+                "sensor_type": "temperature",
+                "sensor_value": {
+                    "min": 20,
+                    "max": 25
+                }
+            }
+        ]
+    }
+    """
+    if 'filters' not in filter_dict:
+        # If no filters list is provided, treat the entire dict as a single filter
+        return apply_single_filter(df, filter_dict)
+        
+    # Apply each filter set independently and combine indices
+    matching_indices = []
+    for filter_set in filter_dict['filters']:
+        indices = apply_single_filter(df, filter_set)
+        matching_indices.append(indices)
+    
+    # Combine all matching indices (union for OR operation)
+    if matching_indices:
+        return pd.Index(set().union(*matching_indices))
+    return pd.Index([])
 
 
 
