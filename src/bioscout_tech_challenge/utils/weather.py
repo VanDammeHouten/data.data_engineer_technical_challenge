@@ -433,6 +433,8 @@ def add_sensor_units(df: pd.DataFrame, sensor_units: dict) -> pd.DataFrame:
     """
     # Map sensor types to their units directly on original dataframe
     df['sensor_units'] = df['sensor_type'].map(sensor_units)
+    print(sensor_units)
+    print(df['sensor_units'].unique())
     # set to string
     df['sensor_units'] = df['sensor_units'].astype(str)
     return df
@@ -537,52 +539,6 @@ def apply_single_filter(df: pd.DataFrame, filter_dict: dict) -> pd.Index:
         else:
             valid_idx &= (df[col] == criteria)
     return df.index[valid_idx]
-
-def filter_weather_data(df: pd.DataFrame, filter_dict: dict) -> pd.Index:
-    """
-    Get indices of rows matching any of the filter criteria sets.
-    
-    Args:
-        df (pd.DataFrame): DataFrame to filter
-        filter_dict (dict): Dictionary containing a list of filter criteria under 'filters' key
-            
-    Returns:
-        pd.Index: Index of rows matching any of the filter sets
-        
-    Example filter_dict:
-    {
-        "filters": [
-            {
-                "device_id": "255",
-                "timestamp": {
-                    "min": "2023-11-05"
-                }
-            },
-            {
-                "sensor_type": "temperature",
-                "sensor_value": {
-                    "min": 20,
-                    "max": 25
-                }
-            }
-        ]
-    }
-    """
-    if 'filters' not in filter_dict:
-        # If no filters list is provided, treat the entire dict as a single filter
-        return apply_single_filter(df, filter_dict)
-        
-    # Apply each filter set independently and combine indices
-    matching_indices = []
-    for filter_set in filter_dict['filters']:
-        indices = apply_single_filter(df, filter_set)
-        matching_indices.append(indices)
-    
-    # Combine all matching indices (union for OR operation)
-    if matching_indices:
-        return pd.Index(set().union(*matching_indices))
-    return pd.Index([])
-
 
 
 
