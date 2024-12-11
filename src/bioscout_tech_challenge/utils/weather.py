@@ -12,7 +12,14 @@ __all__ = [
     'add_sensor_units',
     'add_timezone_from_coordinates',
     'check_timestamp_match',
-    'filter_weather_data',
+    'apply_single_filter',
+    'process_sensor_data',
+    'fix_json_strings',
+    'convert_data_types',
+    'flatten_weather_data',
+    'add_sensor_units',
+    'add_timezone_from_coordinates',
+    'check_timestamp_match',
     'apply_single_filter'
 ]
 
@@ -117,8 +124,7 @@ def expand_extra_information(
     timestamp = pd.to_datetime(json_data['Timestamp'])
     if timestamp != pd.to_datetime(row['date_measured']):
         raise ValueError(f"Timestamp in extra_information column does not match timestamp in date_measured column")
-
-
+    row_dropped['timestamp'] = timestamp
     # Find the timezone from the latitude and longitude
     timezone_coord = get_timezone_from_coordinates(row['latitude'], row['longitude'])
     # Find the timezone from the UTC offset (Not implemented yet)
@@ -129,8 +135,8 @@ def expand_extra_information(
     #     raise ValueError(f"Timezone from coordinates does not match timezone from UTC offset")
     # else:
     row_dropped['timezone'] = timezone_coord
-    if row_dropped['timestamp'].exists():
-        row_dropped['timestamp'] = row_dropped['timestamp'].dt.tz_localize(row_dropped['timezone'])
+    if pd.notna(row_dropped['timestamp']):
+        row_dropped['timestamp'] = row_dropped['timestamp'].tz_convert(row_dropped['timezone'])
     else:
         row_dropped['timestamp'] = row_dropped['timestamp'].astype(str)
     for key in unique_columns:
@@ -433,8 +439,6 @@ def add_sensor_units(df: pd.DataFrame, sensor_units: dict) -> pd.DataFrame:
     """
     # Map sensor types to their units directly on original dataframe
     df['sensor_units'] = df['sensor_type'].map(sensor_units)
-    print(sensor_units)
-    print(df['sensor_units'].unique())
     # set to string
     df['sensor_units'] = df['sensor_units'].astype(str)
     return df
