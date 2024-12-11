@@ -147,5 +147,3 @@ Here is how we will evaluate your response, we are looking for the following
 clarification, please feel free to email nick at nicholas@bioscout.com.au who you interviewed with. He'll be happy to
 answer any queries you have, there's also no penalty for asking questions, we want you to have all the information you
 need, we're looking for quality and clarity.**
-
-    
