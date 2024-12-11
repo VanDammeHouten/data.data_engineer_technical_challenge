@@ -1,0 +1,48 @@
+{
+  "remove_filters": [
+    {
+      "name": "remove_prototype_devices",
+      "description": "Remove sensor readings from prototype devices",
+      "filters": [
+        {
+          "device_id": 255
+        }
+      ]
+    },
+    {
+      "name": "remove_calibration_data",
+      "description": "Remove calibration data from second group of devices calibrated between 2024-11-05 and 2024-11-08",
+      "filters": [
+        {
+          "device_id": {"min": 280, "max": 291},
+          "timestamp": {"min": "2024-11-05", "max": "2024-11-08"}
+        }
+      ]
+    }
+  ],
+  "tag_filters": [
+    {
+      "name": "optical_device_malfunction",
+      "description": "Tag optical devices that have malfunctioned",
+      "tag": "OpticalRainGauge_malfunction",
+      "filters": [
+        {
+          "device_id": 290,
+          "timestamp": {"min": "2024-11-20", "max": "2024-11-23"},
+          "sensor_type": "rainfall",
+          "sensor_device": "OpticalRainGauge"
+        }
+      ]
+    },
+    {
+      "name": "device_group_a",
+      "description": "Tag specific device group",
+      "tag": "group_a",
+      "filters": [
+        {
+          "device_id": {"min": 280, "max": 290}
+        }
+      ]
+    }
+  ]
+}
