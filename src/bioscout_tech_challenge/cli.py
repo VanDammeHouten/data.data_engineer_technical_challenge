@@ -282,7 +282,7 @@ def merge_command(opts: CommandOptions):
     else:
         logger.error("No input file or directory provided")
         return
-
+    print(opts.output)
     # Process each file
     for file in files:
         try:
@@ -374,7 +374,7 @@ def filter_weather(opts: CommandOptions):
 
     # Read filter file
     try:
-        filter_dict = read_json_file(opts.filter_file)
+        filter_config = read_json_file(opts.filter_file)
     except Exception as e:
         logger.error(f"Error reading filter file: {e}")
         return
@@ -383,23 +383,29 @@ def filter_weather(opts: CommandOptions):
     for file in files:
         try:
             data_df = read_csv_file(file)
+            modified_df = data_df.copy()
             
-            # Get matching rows
-            matching_rows = data_df.merge(filter_df, how='left', indicator=True)
-            matching_mask = matching_rows['_merge'] == 'both'
+            # Apply removal filters
+            if "remove_filters" in filter_config:
+                for filter_group in filter_config["remove_filters"]:
+                    for filter_condition in filter_group["filters"]:
+                        matching_idx = apply_single_filter(modified_df, filter_condition)
+                        modified_df = modified_df.drop(matching_idx)
+                        logger.info(f"Removed {len(matching_idx)} rows using filter '{filter_group['name']}'")
             
-            # Filter the data
+            # Apply tagging filters
+            if "tag_filters" in filter_config:
+                for filter_group in filter_config["tag_filters"]:
+                    tag_column = filter_group["tag"]
+                    # Initialize tag column if it doesn't exist
+                    if tag_column not in modified_df.columns:
+                        modified_df[tag_column] = False
+                    
+                    for filter_condition in filter_group["filters"]:
+                        matching_idx = apply_single_filter(modified_df, filter_condition)
+                        modified_df.loc[matching_idx, tag_column] = True
+                        logger.info(f"Tagged {len(matching_idx)} rows with '{tag_column}' using filter '{filter_group['name']}'")
             
-            if opts.tag:
-                # Tag matching rows
-                data_df[opts.tag] = matching_mask
-                filtered_df = data_df
-                logger.info(f"Tagged {matching_mask.sum()} rows in {file.name}")
-            else:
-                # Remove matching rows
-                filtered_df = data_df[~matching_mask]
-                logger.info(f"Removed {matching_mask.sum()} rows from {file.name}")
-
             # Save output
             if opts.output is None:
                 outputfile = file.parent / (file.name.replace('.csv', '') + '_filtered.csv')
@@ -408,7 +414,7 @@ def filter_weather(opts: CommandOptions):
             else:
                 outputfile = opts.output
                 
-            save_csv_file(filtered_df, outputfile)
+            save_csv_file(modified_df, outputfile)
             logger.info(f"Saved filtered data to {outputfile}")
             
         except Exception as e:
