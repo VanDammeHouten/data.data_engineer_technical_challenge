@@ -1,4 +1,19 @@
+"""
+File operation utility functions.
+"""
+
+__all__ = [
+    'read_csv_file',
+    'save_csv_file',
+    'find_csv_files',
+    'identify_header',
+    'combine_csv_files',
+    'read_json_file',
+    'parse_sensor_schema'
+]
+
 import pandas as pd
+import json
 from typing import Optional, Union
 from pathlib import Path
 
@@ -111,7 +126,7 @@ def identify_header(
 
 def combine_csv_files(
     file_paths: list[Union[str, Path]],
-    source_column: str = 'source_file',
+    add_source_column: bool = True,
     detect_header: bool = True,
     **kwargs
 ) -> Optional[pd.DataFrame]:
@@ -120,8 +135,8 @@ def combine_csv_files(
     
     Args:
         file_paths: List of paths to CSV files
-        source_column: Name of the column to store source file information (default: 'source_file')
-        use_header: Whether to use the header from the first file (default: True)
+        add_source_column: Whether to add a column to track the source file, column name: 'source_file' (default: True)
+        detect_header: Whether to detect the header from the first file (default: True)
         **kwargs: Additional arguments passed to read_csv_file
         
     Returns:
@@ -144,7 +159,8 @@ def combine_csv_files(
                 df = read_csv_file(file_path, header=None,names=header_names,  **kwargs)
             if df is not None:
                 # Add source column with file name
-                df[source_column] = Path(file_path).name
+                if add_source_column:
+                    df['source_file'] = Path(file_path).name
                 dfs.append(df)
             else:
                 print(f"Skipping {file_path} due to read error")
@@ -176,6 +192,9 @@ def find_csv_files(
         
     Returns:
         list[Path]: List of paths to matching CSV files
+        
+    Raises:
+        Exception: If an error occurs while searching for CSV files
     """
     try:
         # Convert to Path object and resolve any relative paths
@@ -199,8 +218,47 @@ def find_csv_files(
         return sorted(csv_files)
         
     except Exception as e:
-        print(f"Error searching for CSV files: {str(e)}")
-        return []
+        raise Exception(f"Error searching for CSV files: {str(e)}")
 
 
+def read_json_file(file_path: Union[str, Path]) -> dict:
+    """
+    Read and parse a JSON file.
+    
+    Args:
+        file_path: Path to the JSON file to read
+        
+    Returns:
+        dict: Parsed JSON data as a dictionary
+        
+    Raises:
+        FileNotFoundError: If file does not exist
+        JSONDecodeError: If file contains invalid JSON
+    """
+    try:
+        # Convert to Path object and resolve path
+        path = Path(file_path).resolve()
+        
+        if not path.is_file():
+            raise FileNotFoundError(f"File not found: {path}")
+            
+        # Read and parse JSON
+        with open(path, 'r') as f:
+            return json.load(f)
+            
+    except json.JSONDecodeError as e:
+        print(f"Error parsing JSON file: {str(e)}")
+        return {}
+    except Exception as e:
+        print(f"Error reading JSON file: {str(e)}")
+        return {}
 
+def parse_sensor_schema(sensor_schema: dict) -> dict:
+    """
+    Parse the sensor schema into a dictionary
+    """
+
+    kwargs = {}
+    for key, value in sensor_schema.items():
+        kwargs[key] = value
+    return kwargs

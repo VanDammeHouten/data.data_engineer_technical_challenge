@@ -1,0 +1,41 @@
+{
+    "sensor_types": [
+        "VOCs",
+        "Pressure",
+        "Humidity",
+        "Temperature",
+        "WindSpeed",
+        "WindDirection",
+        "Rainfall"
+    ],
+    "sensor_units": {
+        "voc": "IAQ",
+        "humidity": "%",
+        "pressure": "hPa",
+        "rainfall": "mm",
+        "temperature": "C",
+        "windspeed": "m/s",
+        "winddirection": "degrees"
+    },
+    "meta_columns": [
+        "IotID",
+        "Timestamp"
+    ],
+    "column_mapping": {
+        "Value": "sensor_value",
+        "Sensor": "sensor_device",
+        "IotID": "iotid",
+        "SampleTimeLength": "sample_time_length",
+        "Timestamp": "timestamp"
+    },
+    "columns_to_drop": [
+        "extra_information",
+        "pressure",
+        "voc",
+        "date_measured"
+    ],
+    "column_types": {
+        "sensor_value": "float",
+        "sample_time_length": "int"
+    }
+} 

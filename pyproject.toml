@@ -2,7 +2,7 @@
 name = "bioscout-tech-challenge"
 version = "0.1.0"
 description = "Technical challenge for BioScout's 2024 Data Engineer Role"
-authors = ["Nick <nicholas@bioscout.com.au>"]
+authors = ["Zach <zach.milgate@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.scripts]
@@ -27,6 +27,7 @@ numpy = "^2.1.3"
 jupyterlab = "^4.3.0"
 pyapp = "^4.16"
 pillow = "^11.0.0"
+timezonefinder = "^6.5.7"
 
 
 [build-system]
