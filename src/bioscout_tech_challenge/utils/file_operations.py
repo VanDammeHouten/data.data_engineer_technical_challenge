@@ -37,7 +37,18 @@ def read_csv_file(
     Returns:
         DataFrame if successful, None if failed
     """
-
+    # Try reading first few rows to detect column types
+    try:
+        dtypes = pd.read_csv(
+            file_path,
+            sep=separator,
+            header=header,
+            nrows=5,
+            **kwargs
+        ).dtypes
+        kwargs['dtype'] = {col: str(dtype) for col, dtype in dtypes.items()}
+    except Exception as e:
+        print(f"Warning: Could not pre-detect column types: {str(e)}")
     try:
         df = pd.read_csv(
             file_path,
@@ -142,7 +153,7 @@ def combine_csv_files(
     Returns:
         DataFrame containing all files' data if successful, None if failed
     """
-    
+    header_names = None
     try:
         # Initialize empty list to store DataFrames
         dfs = []
@@ -155,8 +166,10 @@ def combine_csv_files(
                 df = read_csv_file(file_path, header=use_header,  **kwargs)
                 header_names = list(df.columns)
                 detect_header = False
+            elif header_names is None:
+                df = read_csv_file(file_path, header='infer',  **kwargs)
             else:
-                df = read_csv_file(file_path, header=None,names=header_names,  **kwargs)
+                df = read_csv_file(file_path, header=None, names=header_names,  **kwargs)
             if df is not None:
                 # Add source column with file name
                 if add_source_column:
@@ -180,7 +193,8 @@ def combine_csv_files(
 def find_csv_files(
     folder_path: Union[str, Path],
     prefix: Optional[str] = None,
-    recursive: bool = False
+    recursive: bool = False,
+    sort: bool = False
 ) -> list[Path]:
     """
     Find all CSV files in a folder, optionally filtering by prefix.
@@ -215,7 +229,7 @@ def find_csv_files(
         if prefix:
             csv_files = [p for p in csv_files if p.name.startswith(prefix)]
             
-        return sorted(csv_files)
+        return sorted(csv_files, key=lambda x: int(x.name.split('.')[0])) if sort else csv_files
         
     except Exception as e:
         raise Exception(f"Error searching for CSV files: {str(e)}")
