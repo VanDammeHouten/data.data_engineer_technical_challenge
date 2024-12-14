@@ -2,7 +2,7 @@ import logging
 
 from pyapp import app
 from pyapp.app import CliApplication, argument, CommandOptions
-from bioscout_tech_challenge.utils.weather import flatten_weather_data, merge_weather_data, add_timezone_from_coordinates
+from bioscout_tech_challenge.utils.weather import flatten_weather_data, merge_weather_data, add_timezone_from_coordinates, apply_single_filter
 from bioscout_tech_challenge.utils.file_operations import *
 from bioscout_tech_challenge.default_settings import BioscoutTechChallengeSettings
 from pyapp.conf import settings
@@ -93,7 +93,7 @@ weather_group = APP.create_command_group(
 def flatten_weather(opts: CommandOptions):
     """
     Flatten weather data from a CSV file or directory of CSV files.
-    Extracts additional sensor data from the extra_information column and merges it with the weather data.
+    Extracts additional sensor data from the extra_information column.
     """
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.DEBUG if settings.DEBUG else logging.INFO)
@@ -354,6 +354,10 @@ def merge_command(opts: CommandOptions):
     default=None,
 )
 def filter_weather(opts: CommandOptions):
+    """
+    Filter weather data from a CSV file or directory of CSV files using a filter file that contains
+    filters to remove and tags to add.
+    """
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.DEBUG if settings.DEBUG else logging.INFO)
     
@@ -413,6 +417,9 @@ def filter_weather(opts: CommandOptions):
                 outputfile = opts.output / (file.name.replace('.csv', '') + '_filtered.csv')
             else:
                 outputfile = opts.output
+                
+            # Create output directory if it doesn't exist
+            outputfile.parent.mkdir(parents=True, exist_ok=True)
                 
             save_csv_file(modified_df, outputfile)
             logger.info(f"Saved filtered data to {outputfile}")

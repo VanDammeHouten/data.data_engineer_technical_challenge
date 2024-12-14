@@ -35,12 +35,12 @@
       ]
     },
     {
-      "name": "device_group_a",
+      "name": "device_group_b",
       "description": "Tag specific device group",
-      "tag": "group_a",
+      "tag": "group_b",
       "filters": [
         {
-          "device_id": {"min": 280, "max": 290}
+          "device_id": {"min": 280, "max": 292}
         }
       ]
     }

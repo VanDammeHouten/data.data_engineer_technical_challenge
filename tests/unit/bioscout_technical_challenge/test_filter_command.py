@@ -1,10 +1,15 @@
-import pytest
-import pandas as pd
-from pathlib import Path
+# Standard library imports
 import json
 import tempfile
-from bioscout_tech_challenge.cli import filter_weather
+from pathlib import Path
+
+# Third-party imports
+import pytest
+import pandas as pd
 from pyapp.app import CommandOptions
+
+# Local imports
+from bioscout_tech_challenge.cli import filter_weather
 
 @pytest.fixture
 def sample_weather_data():
@@ -69,8 +74,9 @@ def temp_csv_file(sample_weather_data):
 @pytest.fixture
 def temp_filter_file(filter_config):
     """Create a temporary JSON file with filter configuration."""
-    with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as tmp:
-        json.dump(filter_config, tmp)
+    with tempfile.NamedTemporaryFile(suffix='.json', mode='w', delete=False) as tmp:
+        json.dump(filter_config, tmp, indent=2)
+        tmp.flush()  # Ensure all data is written
         return Path(tmp.name)
 
 def test_remove_filters(temp_csv_file, temp_filter_file):
@@ -79,6 +85,7 @@ def test_remove_filters(temp_csv_file, temp_filter_file):
     opts = CommandOptions()
     opts.file = temp_csv_file
     opts.filter_file = temp_filter_file
+    opts.directory = None
     opts.output = None
 
     # Run filter_weather
@@ -108,7 +115,7 @@ def test_tag_filters(temp_csv_file, temp_filter_file):
     opts.file = temp_csv_file
     opts.filter_file = temp_filter_file
     opts.output = None
-
+    opts.directory = None
     # Run filter_weather
     filter_weather(opts)
 
@@ -142,7 +149,7 @@ def test_invalid_filter_file(temp_csv_file):
     opts.file = temp_csv_file
     opts.filter_file = invalid_filter_file
     opts.output = None
-
+    opts.directory = None
     # Should not raise an exception but log an error
     filter_weather(opts)
 
@@ -152,6 +159,7 @@ def test_missing_input_file(temp_filter_file):
     opts.file = Path('nonexistent.csv')
     opts.filter_file = temp_filter_file
     opts.output = None
+    opts.directory = None
 
     # Should not raise an exception but log an error
     filter_weather(opts)
